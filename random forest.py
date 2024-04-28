@@ -73,80 +73,52 @@ X_preprocessed = preprocessor.fit_transform(X)
 X_train, X_test, y_train, y_test = train_test_split(X_preprocessed, y, test_size=0.2, random_state=42)
 
 
-# Creating the Random Forest classifier
-rf_classifier = RandomForestClassifier(n_estimators=80, random_state=42, criterion= "gini", max_features= "sqrt")
-
-# Training the classifier
-rf_classifier.fit(X_train, y_train)
-
-# Making predictions
-predictions = rf_classifier.predict(X_test)
-
-# Calculating accuracy
-accuracy = accuracy_score(y_test, predictions)
-print("Accuracy:", accuracy)
-print(classification_report(y_test, predictions))
-
-
 # Creating the balanced Random Forest classifier
-rf_classifier2 = BalancedRandomForestClassifier(
-                                       n_estimators=116,
-                                       random_state=42, sampling_strategy="all", replacement=True, bootstrap=False
-                                       , criterion="entropy")
+rf_classifier = BalancedRandomForestClassifier(random_state=42, sampling_strategy="all", replacement=True, bootstrap=False)
+Grid search
 
+# Let's start with a broader grid search to get the best criterions
+n_estimators=np.arange(10,200,10)
+criterion=["entropy","gini"]
+max_features=["log2","sqrt"]
+class_weight=[None, "balanced", "balanced_subsample"]
+max_depth=[None,3,7,11]
+min_samples_split=[2,3,4] 
+min_samples_leaf=[1,2]
 
-# Training 
-rf_classifier2.fit(X_train, y_train)
+param_grid={"n_estimators":n_estimators,"criterion":criterion,"max_features":max_features,"class_weight":class_weight,"max_depth":max_depth,"min_samples_split":min_samples_split,"min_samples_leaf":min_samples_leaf}
 
-# Making predictions
-predictions2 = rf_classifier2.predict(X_test)
+# to get the results
+rf_grid=GridSearchCV(estimator=rf_classifier,param_grid=param_grid,cv=3,verbose=0,n_jobs=4)
+rf_grid.fit(X_train,y_train)
 
-# Calculating accuracy
-accuracy2 = accuracy_score(y_test, predictions2)
-print("Accuracy:", accuracy2)
-print(classification_report(y_test, predictions2))
-ConfusionMatrixDisplay.from_predictions(y_test, predictions)
-ConfusionMatrixDisplay.from_predictions(y_test, predictions2)
-plt.show()
+rf_grid.fit(X_train, y_train, sample_weight=X_train[:,24])
+print("Best parameters found: ",rf_grid.best_params_)
+print("best score found: ", rf_grid.best_score_)
+# now we do it one more time around the best parameters
+n_estimators=np.arange(110,130,1)
 
+param_grid2={"n_estimators":n_estimators}
 
+# All the best estimator found are the default ones
+rf_classifier2 = BalancedRandomForestClassifier(criterion="entropy", random_state=42, sampling_strategy="all", replacement=True, bootstrap=False)
 
-# grid search for getting the best criterions for both random forest
+# to get the results
+rf_grid2 = GridSearchCV(estimator=rf_classifier2,param_grid=param_grid2,cv=3,verbose=0,n_jobs=4)
+rf_grid2.fit(X_train,y_train)
 
-#n_estimators=[int(x) for x in np.linspace(start=10,stop=200,num=20)]
-#criterion=["entropy","gini"]
-#max_features=["log2","sqrt"]
-#max_depth=[2,4,6]
-#min_samples_split=[2,3,5]
-#min_samples_leaf=[1,2]
-#bootstrap=[True,False]
+rf_grid2.fit(X_train, y_train, sample_weight=X_train[:,24])
+print("Best parameters found: ",rf_grid2.best_params_)
+print("best score found: ", rf_grid2.best_score_)
+# So now we train the tuned model on the full data
+best_model_random_forest = BalancedRandomForestClassifier(n_estimators=116, criterion="entropy", random_state=42, sampling_strategy="all", replacement=True, bootstrap=False)
 
-#param_grid={"n_estimators":n_estimators,"criterion":criterion,"max_features":max_features}#,"max_depth":max_depth,"min_samples_split":min_samples_split,
-            #"min_samples_leaf":min_samples_leaf,"bootstrap":bootstrap}
+best_model_random_forest.fit(X, y)
+pred_random_forest = pd.DataFrame(best_model_random_forest.predict_proba(test_data), columns=["0", "1"])
 
-#rf_grid=GridSearchCV(estimator=rf_classifier,param_grid=param_grid,cv=3,verbose=0,n_jobs=4)
-#rf_grid.fit(X_train,y_train)
-#print(" Results from Grid Search " )
-#print("\n The best estimator across ALL searched params:\n",rf_grid.best_estimator_)
-#print("\n The best score across ALL searched params:\n",rf_grid.best_score_)
-#print("\n The best parameters across ALL searched params:\n",rf_grid.best_params_)
-
-
-#n_estimators=[int(x) for x in np.linspace(start=110,stop=130,num=21)]
-#criterion=["entropy","gini"]
-#max_features=["log2","sqrt"]
-#class_weight=[None, "balanced", "balanced_subsample"]
-#max_depth=[None,3,5,7,9,11,13]
-#min_samples_split=[2,3,4]
-#min_samples_leaf=[1,2,3]
-
-
-#param_grid={"max_depth":max_depth,"min_samples_split":min_samples_split,"min_samples_leaf":min_samples_leaf,"max_leaf_nodes":max_leaf_nodes}
-    #"n_estimators":n_estimators,"criterion":criterion,"max_features":max_features,"class_weight":class_weight}
-
-#rf_grid2=GridSearchCV(estimator=rf_classifier2,param_grid=param_grid,cv=3,verbose=0,n_jobs=4)
-#rf_grid2.fit(X_train,y_train)
-#print(" Results from Grid Search " )
-#print("\n The best estimator across ALL searched params:\n",rf_grid2.best_estimator_)
-#print("\n The best score across ALL searched params:\n",rf_grid2.best_score_)
-#print("\n The best parameters across ALL searched params:\n",rf_grid2.best_params_)
+# Creating data for submission
+test_data_sub2 = pd.DataFrame(data={'ID':test_data['id'], 
+                                   'PRED':pred_random_forest["1"]})
+test_data_sub2
+# exporting the results
+test_data_sub2.to_csv('output/balanced_random_forest_weighted_pred_submission.csv', header=True, index=False)
